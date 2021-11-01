@@ -14,7 +14,13 @@ type Cache struct {
 	pos     int
 	DBInst  *DB
 	name    string
-	mutex   *sync.Mutex
+	mutex   *sync.RWMutex
+}
+
+func NewCache(db *DB) *Cache {
+	csh := Cache{}
+	csh.Init(db)
+	return &csh
 }
 
 // Инициализация кеша - установка размера, восстанавление
@@ -22,7 +28,7 @@ func (c *Cache) Init(db *DB) {
 	c.DBInst = db
 	db.SetCahceInstance(c)
 	c.name = "Cahce"
-	c.mutex = &sync.Mutex{}
+	c.mutex = &sync.RWMutex{}
 
 	// Установка размера кеша
 	bufSize, err := strconv.Atoi(os.Getenv("CACHE_SIZE"))
@@ -92,10 +98,10 @@ func (c *Cache) GetOrderOutById(oid int64) (*OrderOut, error) {
 	var o Order
 	var err error
 
-	c.mutex.Lock()
+	c.mutex.RLock()
 	// проверка в кеше. Если нет - идем в базу
 	o, isExist := c.buffer[oid]
-	c.mutex.Unlock()
+	c.mutex.RUnlock()
 
 	if isExist {
 		log.Printf("%s: OrderOut (id:%d) взят из кеша!\n", c.name, oid)

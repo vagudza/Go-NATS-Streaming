@@ -11,26 +11,33 @@ import (
 )
 
 type StreamingHandler struct {
-	conn  stan.Conn
-	sub   Subscriber
-	pub   Publisher
+	conn  *stan.Conn
+	sub   *Subscriber
+	pub   *Publisher
 	name  string
 	isErr bool
 }
 
+func NewStreamingHandler(db *db.DB) *StreamingHandler {
+	sh := StreamingHandler{}
+	sh.Init(db)
+	return &sh
+}
+
 // Инициализация Subscriber и Publisher
-func (sh *StreamingHandler) Init(dbObject *db.DB) {
+func (sh *StreamingHandler) Init(db *db.DB) {
 	sh.name = "StreamingHandler"
 	err := sh.Connect()
 
-	if err == nil {
-		sh.sub = Subscriber{dbObject: dbObject, sc: sh.conn, name: "Subscriber"}
+	if err != nil {
+		sh.isErr = true
+		log.Printf("%s: StreamingHandler error: %s", sh.name, err)
+	} else {
+		sh.sub = NewSubscriber(db, sh.conn)
 		sh.sub.Subscribe()
 
-		sh.pub = Publisher{sc: sh.conn, name: "Publisher"}
+		sh.pub = NewPublisher(sh.conn)
 		sh.pub.Publish()
-	} else {
-		sh.isErr = true
 	}
 }
 
@@ -44,18 +51,18 @@ func (sh *StreamingHandler) Connect() error {
 			nats.ReconnectWait(time.Second*4),
 			nats.Timeout(time.Second*4),
 		),
-		//stan.Pings(5, 3), // Send PINGs every 5 seconds, and fail after 3 PINGs without any response.
+		stan.Pings(5, 3), // Send PINGs every 5 seconds, and fail after 3 PINGs without any response.
 		stan.SetConnectionLostHandler(func(_ stan.Conn, reason error) {
 			log.Printf("%s: connection lost, reason: %v", sh.name, reason)
 		}),
 	)
 	if err != nil {
-		log.Printf("%s: can't connect: %v.\nMake sure a NATS Streaming Server is running at: %s", sh.name, err, os.Getenv("NATS_HOSTS"))
+		log.Printf("%s: can't connect: %v.\n", sh.name, err)
 		return err
 	}
-	sh.conn = conn
-	log.Printf("%s: connected to %s clusterID: [%s] clientID: [%s]\n", sh.name, os.Getenv("NATS_HOSTS"), os.Getenv("NATS_CLUSTER_ID"),
-		os.Getenv("NATS_CLIENT_ID"))
+	sh.conn = &conn
+
+	log.Printf("%s: connected!", sh.name)
 	return nil
 }
 
@@ -64,7 +71,7 @@ func (sh *StreamingHandler) Finish() {
 	if !sh.isErr {
 		log.Printf("%s: Finish...", sh.name)
 		sh.sub.Unsubscribe()
-		sh.conn.Close()
+		(*sh.conn).Close()
 		log.Printf("%s: Finished!", sh.name)
 	}
 }

@@ -12,9 +12,9 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-type okey string
+type ordkey string
 
-const orderKey okey = "order"
+const orderKey ordkey = "order"
 
 type Api struct {
 	rtr                *chi.Mux
@@ -22,6 +22,12 @@ type Api struct {
 	name               string
 	srv                *http.Server
 	httpServerExitDone *sync.WaitGroup
+}
+
+func NewApi(csh *db.Cache) *Api {
+	api := Api{}
+	api.Init(csh)
+	return &api
 }
 
 // Инициализация сервера
@@ -101,7 +107,7 @@ func (a *Api) orderCtx(next http.Handler) http.Handler {
 	})
 }
 
-// Обработчик главной страницы http://localhost:8080
+// Обработчик главной страницы http://localhost:3333
 func (a *Api) WellcomeHandler(w http.ResponseWriter, r *http.Request) {
 	// Установка ответа для браузера, что страница загрузилась
 	t, err := template.ParseFiles("ui/templates/order.html")
@@ -122,7 +128,7 @@ func (a *Api) WellcomeHandler(w http.ResponseWriter, r *http.Request) {
 // Хендлер запроса Order
 func (a *Api) GetOrder(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	ou, ok := ctx.Value(orderKey).(*db.OrderOut)
+	orderOut, ok := ctx.Value(orderKey).(*db.OrderOut)
 	if !ok {
 		log.Printf("%v: getOrder(): ошибка приведения интерфейса к типу *OrderOut\n", a.name)
 		http.Error(w, http.StatusText(http.StatusUnprocessableEntity), http.StatusUnprocessableEntity) // 422
@@ -138,7 +144,7 @@ func (a *Api) GetOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	t.ExecuteTemplate(w, "order.html", ou)
+	t.ExecuteTemplate(w, "order.html", orderOut)
 	if err != nil {
 		log.Printf("%v: GetOrder(): ошибка выполнения шаблона html: %s\n", a.name, err)
 		return

@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
 	"wb-test-task/api"
 	"wb-test-task/cmd/config"
 	"wb-test-task/internal/db"
@@ -9,28 +11,35 @@ import (
 )
 
 func main() {
+
 	// Инициализация конфигурации проекта
 	config.ConfigSetup()
-
-	// Инициализация подключения к БД
-	var dbObject db.DB = db.DB{}
-	dbObject.Init()
-
-	// Инициализация кеша
-	var csh db.Cache = db.Cache{}
-	csh.Init(&dbObject)
-	defer csh.Finish()
-
-	// Инициализация NATS Streaming: Publisher + Subscriber
-	var sh streaming.StreamingHandler = streaming.StreamingHandler{}
-	sh.Init(&dbObject)
-	defer sh.Finish()
+	dbObject := db.NewDB()
+	csh := db.NewCache(dbObject)
+	sh := streaming.NewStreamingHandler(dbObject)
 
 	// Запуск сервера для выдачи OrderOut по адресу http://localhost:3333/orders/123
-	var myApi api.Api = api.Api{}
-	myApi.Init(&csh)
-	defer myApi.Finish()
+	myApi := api.NewApi(csh)
 
-	fmt.Println("====Нажмите Enter для выхода из программы===")
-	fmt.Scanln()
+	// Wait for a SIGINT (perhaps triggered by user with CTRL-C)
+	// Run cleanup when signal is received
+	signalChan := make(chan os.Signal, 1)
+	cleanupDone := make(chan bool)
+	signal.Notify(signalChan, os.Interrupt)
+	go func() {
+		for range signalChan {
+			fmt.Printf("\nReceived an interrupt, unsubscribing and closing connection...\n\n")
+			// Do not unsubscribe a durable on exit, except if asked to.
+			// if durable == "" || unsubscribe {
+			// 	sub.Unsubscribe()
+			// }
+			// sc.Close()
+			csh.Finish()
+			sh.Finish()
+			myApi.Finish()
+
+			cleanupDone <- true
+		}
+	}()
+	<-cleanupDone
 }

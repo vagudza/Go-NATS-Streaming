@@ -10,77 +10,16 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 
-// Модель получаемых данных
-type Order struct {
-	OrderUID          string  `json:"order_uid"`
-	Entry             string  `json:"entry"`
-	InternalSignature string  `json:"internal_signature"`
-	Payment           Payment `json:"payment"`
-	Items             []Items `json:"items"`
-	Locale            string  `json:"locale"`
-	CustomerID        string  `json:"customer_id"`
-	TrackNumber       string  `json:"track_number"`
-	DeliveryService   string  `json:"delivery_service"`
-	Shardkey          string  `json:"shardkey"`
-	SmID              int     `json:"sm_id"`
-}
-
-func (o *Order) GetTotalPrice() int {
-	var total int
-	for _, item := range o.Items {
-		total += item.TotalPrice
-	}
-	return total
-}
-
-type Payment struct {
-	Transaction  string `json:"transaction"`
-	Currency     string `json:"currency"`
-	Provider     string `json:"provider"`
-	Amount       int    `json:"amount"`
-	PaymentDt    int    `json:"payment_dt"`
-	Bank         string `json:"bank"`
-	DeliveryCost int    `json:"delivery_cost"`
-	GoodsTotal   int    `json:"goods_total"`
-}
-type Items struct {
-	ChrtID     int    `json:"chrt_id"`
-	Price      int    `json:"price"`
-	Rid        string `json:"rid"`
-	Name       string `json:"name"`
-	Sale       int    `json:"sale"`
-	Size       string `json:"size"`
-	TotalPrice int    `json:"total_price"`
-	NmID       int    `json:"nm_id"`
-	Brand      string `json:"brand"`
-}
-
-// Модель для выдачи
-type OrderOut struct {
-	OrderUID        string `json:"order_uid"`
-	Entry           string `json:"entry"`
-	TotalPrice      int    `json:"total_price"`
-	CustomerID      string `json:"customer_id"`
-	TrackNumber     string `json:"track_number"`
-	DeliveryService string `json:"delivery_service"`
-}
-
 type DB struct {
 	pool *pgxpool.Pool
 	csh  *Cache
 	name string
 }
 
-// Инициализация пула соединений
-func (db *DB) Init() {
-	db.name = "Postgres"
-	var err error
-	dbUrl := fmt.Sprintf("postgres://%s:%s@%s/%s", os.Getenv("DB_USERNAME"), os.Getenv("DB_PASSWORD"), os.Getenv("DB_HOST"), os.Getenv("DB_NAME"))
-	db.pool, err = pgxpool.Connect(context.Background(), dbUrl)
-	if err != nil {
-		log.Fatalf("%v: unable to connect to database: %v\n", db.name, err)
-	}
-	log.Printf("%v: connected to database\n", db.name)
+func NewDB() *DB {
+	db := DB{}
+	db.Init()
+	return &db
 }
 
 // Для обратных вызовов в кеш, сохраняем инстанс *Cache
@@ -140,6 +79,7 @@ func (db *DB) GetCacheState(bufSize int) (map[int64]Order, []int64, int, error) 
 func (db *DB) GetOrderByID(oid int64) (Order, error) {
 	var o Order
 	var payment_id_fk int64
+
 	// Сбор данных об Order
 	err := db.pool.QueryRow(context.Background(), `SELECT OrderUID, Entry, InternalSignature, payment_id_fk, Locale, CustomerID, 
 	TrackNumber, DeliveryService, Shardkey, SmID FROM orders WHERE id = $1`, oid).Scan(&o.OrderUID, &o.Entry,
@@ -189,9 +129,15 @@ func (db *DB) AddOrder(o Order) (int64, error) {
 	var lastInsertId int64
 	var itemsIds []int64 = []int64{}
 
+	tx, err := db.pool.Begin(context.Background())
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(context.Background())
+
 	// добавление Items
 	for _, item := range o.Items {
-		err := db.pool.QueryRow(context.Background(), `INSERT INTO items (ChrtID, Price, Rid, Name, Sale, Size, TotalPrice, NmID, Brand)
+		err := tx.QueryRow(context.Background(), `INSERT INTO items (ChrtID, Price, Rid, Name, Sale, Size, TotalPrice, NmID, Brand)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`, item.ChrtID, item.Price, item.Rid, item.Name, item.Sale, item.Size,
 			item.TotalPrice, item.NmID, item.Brand).Scan(&lastInsertId)
 		if err != nil {
@@ -202,7 +148,7 @@ func (db *DB) AddOrder(o Order) (int64, error) {
 	}
 
 	// Добавление Payment
-	err := db.pool.QueryRow(context.Background(), `INSERT INTO payment (Transaction, Currency, Provider, Amount, PaymentDt, Bank, DeliveryCost,
+	err = tx.QueryRow(context.Background(), `INSERT INTO payment (Transaction, Currency, Provider, Amount, PaymentDt, Bank, DeliveryCost,
 		 GoodsTotal) values ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, o.Payment.Transaction, o.Payment.Currency, o.Payment.Provider,
 		o.Payment.Amount, o.Payment.PaymentDt, o.Payment.Bank, o.Payment.DeliveryCost, o.Payment.GoodsTotal).Scan(&lastInsertId)
 	if err != nil {
@@ -212,7 +158,7 @@ func (db *DB) AddOrder(o Order) (int64, error) {
 	paymentIdFk := lastInsertId
 
 	// Добавление Order
-	err = db.pool.QueryRow(context.Background(), `INSERT INTO orders (OrderUID, Entry, InternalSignature, payment_id_fk, Locale, 
+	err = tx.QueryRow(context.Background(), `INSERT INTO orders (OrderUID, Entry, InternalSignature, payment_id_fk, Locale, 
 		CustomerID, TrackNumber, DeliveryService, Shardkey, SmID) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id`,
 		o.OrderUID, o.Entry, o.InternalSignature, paymentIdFk, o.Locale, o.CustomerID, o.TrackNumber, o.DeliveryService,
@@ -225,12 +171,17 @@ func (db *DB) AddOrder(o Order) (int64, error) {
 
 	// Разрешение связей один-ко-многим для Order и Order.Items[]
 	for _, itemId := range itemsIds {
-		_, err := db.pool.Exec(context.Background(), `INSERT INTO order_items (order_id_fk, item_id_fk) values ($1, $2)`,
+		_, err := tx.Exec(context.Background(), `INSERT INTO order_items (order_id_fk, item_id_fk) values ($1, $2)`,
 			orderIdFk, itemId)
 		if err != nil {
 			log.Printf("%v: unable to insert data (order_items): %v\n", db.name, err)
 			return -1, err
 		}
+	}
+
+	err = tx.Commit(context.Background())
+	if err != nil {
+		return 0, err
 	}
 
 	log.Printf("%v: Order successfull added to DB\n", db.name)

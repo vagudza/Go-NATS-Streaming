@@ -4,21 +4,27 @@ import (
 	"encoding/json"
 	"log"
 	"os"
-	"time"
 	"wb-test-task/internal/db"
 
 	stan "github.com/nats-io/stan.go"
 )
 
 type Publisher struct {
-	sc   stan.Conn
+	sc   *stan.Conn
 	name string
+}
+
+func NewPublisher(conn *stan.Conn) *Publisher {
+	return &Publisher{
+		name: "Publisher",
+		sc:   conn,
+	}
 }
 
 // Тестовый скрипт публикации данных Order
 func (p *Publisher) Publish() {
 	// some date to send
-	item1 := db.Items{ChrtID: 1, Price: 10, Rid: "rid 1", Name: "T-Shirt", Sale: 9, Size: "M", TotalPrice: 13, NmID: 1, Brand: "Adidas"}
+	item1 := db.Items{ChrtID: 1, Price: 10, Rid: "rid 1", Name: "T-Shirt-4", Sale: 9, Size: "M", TotalPrice: 13, NmID: 1, Brand: "Adidas"}
 	item2 := db.Items{ChrtID: 2, Price: 12, Rid: "rid 2", Name: "Jeans", Sale: 11, Size: "S", TotalPrice: 14, NmID: 2, Brand: "Collins"}
 	item3 := db.Items{ChrtID: 3, Price: 18, Rid: "rid 3", Name: "Sneakers", Sale: 15, Size: "M", TotalPrice: 20, NmID: 1, Brand: "Nike"}
 	payment := db.Payment{Transaction: "tran 1", Currency: "Rub", Provider: "Provider 1", Amount: 47, PaymentDt: 2, Bank: "VTB", DeliveryCost: 7, GoodsTotal: 3}
@@ -39,12 +45,12 @@ func (p *Publisher) Publish() {
 	}
 
 	// публикация данных:
-	for i := 0; i < 3; i++ {
-		log.Printf("%s: publishing data ...\n", p.name)
-		nuid, err := p.sc.PublishAsync(os.Getenv("NATS_SUBJECT"), orderData, ackHandler) // returns immediately
-		if err != nil {
-			log.Printf("%s: error publishing msg %s: %v\n", p.name, nuid, err.Error())
-		}
-		time.Sleep(time.Second)
+	//for i := 0; i < 3; i++ {
+	log.Printf("%s: publishing data ...\n", p.name)
+	nuid, err := (*p.sc).PublishAsync(os.Getenv("NATS_SUBJECT"), orderData, ackHandler) // returns immediately
+	if err != nil {
+		log.Printf("%s: error publishing msg %s: %v\n", p.name, nuid, err.Error())
 	}
+	//time.Sleep(time.Second)
+	//}
 }
