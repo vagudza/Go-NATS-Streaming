@@ -29,11 +29,6 @@ func main() {
 	go func() {
 		for range signalChan {
 			fmt.Printf("\nReceived an interrupt, unsubscribing and closing connection...\n\n")
-			// Do not unsubscribe a durable on exit, except if asked to.
-			// if durable == "" || unsubscribe {
-			// 	sub.Unsubscribe()
-			// }
-			// sc.Close()
 			csh.Finish()
 			sh.Finish()
 			myApi.Finish()
