@@ -45,12 +45,9 @@ func (p *Publisher) Publish() {
 	}
 
 	// публикация данных:
-	//for i := 0; i < 3; i++ {
 	log.Printf("%s: publishing data ...\n", p.name)
 	nuid, err := (*p.sc).PublishAsync(os.Getenv("NATS_SUBJECT"), orderData, ackHandler) // returns immediately
 	if err != nil {
 		log.Printf("%s: error publishing msg %s: %v\n", p.name, nuid, err.Error())
 	}
-	//time.Sleep(time.Second)
-	//}
 }

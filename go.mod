@@ -30,5 +30,6 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20200714003250-2b9c44734f2b // indirect
 	github.com/jackc/pgtype v1.8.1 // indirect
 	github.com/jackc/puddle v1.1.3 // indirect
-	github.com/pelletier/go-toml/v2 v2.0.0-beta.3
 )
+
+require github.com/stretchr/testify v1.7.1-0.20210427113832-6241f9ab9942 // indirect

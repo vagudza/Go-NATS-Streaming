@@ -21,21 +21,6 @@ func (db *DB) Init() {
 		log.Fatalf("%v: Init() error: %s\n", db.name, err)
 	}
 
-	// настраиваем конфиг
-	/*
-		maxConn, err := strconv.Atoi(os.Getenv("DB_POOL_MAXCONN"))
-		if err != nil {
-			log.Fatalf("%v: Init() error: %s\n", db.name, err)
-		}
-
-		maxConnLifeTime, err := strconv.Atoi(os.Getenv("DB_POOL_MAXCONN_LIFETIME"))
-		if err != nil {
-			log.Fatalf("%v: Init() error: %s\n", db.name, err)
-		}
-	*/
-	//config.MaxConns = int32(maxConn)
-	//config.MaxConnLifetime = time.Duration(maxConnLifeTime) * time.Second
-
 	db.pool, err = pgxpool.ConnectConfig(context.Background(), config)
 	//db.pool, err = pgxpool.Connect(context.Background(), dbUrl)
 	if err != nil {
